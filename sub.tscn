@@ -1,0 +1,43 @@
+[gd_scene format=3 uid="uid://clpd3fridh0v0"]
+
+[ext_resource type="Script" uid="uid://dvxdxvhmri4ma" path="res://sub.gd" id="1_0xm2m"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_p0m8o"]
+size = Vector3(10, 2, 10)
+
+[sub_resource type="BoxMesh" id="BoxMesh_dlplt"]
+size = Vector3(10, 2, 10)
+
+[node name="Window" type="Window" unique_id=1653384864]
+transparent_bg = true
+oversampling_override = 1.0
+mode = 2
+initial_position = 4
+borderless = true
+transparent = true
+sharp_corners = true
+content_scale_mode = 1
+content_scale_aspect = 1
+script = ExtResource("1_0xm2m")
+
+[node name="Sub" type="Node3D" parent="." unique_id=1824726021]
+
+[node name="Ground" type="StaticBody3D" parent="Sub" unique_id=1425835490]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1, 0)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Sub/Ground" unique_id=1106310425]
+shape = SubResource("BoxShape3D_p0m8o")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Sub/Ground" unique_id=624224789]
+mesh = SubResource("BoxMesh_dlplt")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="Sub" unique_id=1052509484]
+
+[node name="Camera" type="Marker3D" parent="Sub" unique_id=1533969610]
+transform = Transform3D(1, 0, 1.7484555e-07, 0, 1, 0, -1.7484555e-07, 0, 1, 0, 0, 0)
+
+[node name="Camera3D" type="Camera3D" parent="Sub/Camera" unique_id=1777943888]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 2.246)
+projection = 1
+size = 2.0
+far = 10.0
