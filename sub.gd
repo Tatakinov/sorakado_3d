@@ -1,16 +1,44 @@
 extends Window
 
+const RAY_LENGTH = 10
 var vrm = preload('res://addons/vrm/vrm_extension.gd')
+var vrm_inst: GLTFDocumentExtension = vrm.new()
+const VRMC_node_constraint = preload('res://addons/vrm/1.0/VRMC_node_constraint.gd')
+var VRMC_node_constraint_inst := VRMC_node_constraint.new()
+const VRMC_springBone = preload('res://addons/vrm/1.0/VRMC_springBone.gd')
+var VRMC_springBone_inst := VRMC_springBone.new()
+const VRMC_materials_mtoon = preload('res://addons/vrm/1.0/VRMC_materials_mtoon.gd')
+var VRMC_materials_mtoon_inst := VRMC_materials_mtoon.new()
+const VRMC_materials_hdr_emissiveMultiplier = preload('res://addons/vrm/1.0/VRMC_materials_hdr_emissiveMultiplier.gd')
+var VRMC_materials_hdr_emissiveMultiplier_inst := VRMC_materials_hdr_emissiveMultiplier.new()
+const VRMC_vrm = preload('res://addons/vrm/1.0/VRMC_vrm.gd')
+var VRMC_vrm_inst := VRMC_vrm.new()
+const VRMC_vrm_animation = preload('res://addons/vrm/1.0/VRMC_vrm_animation.gd')
+var VRMC_vrm_animation_inst := VRMC_vrm_animation.new()
 
 @onready var camera: Camera3D = $Sub/Camera/Camera3D
 
 var _chara: Node3D
 var side: int = 0
 var _rect = Rect2i(0, 0, 0, 0)
+var _drag: Dictionary = {
+	'pressed': false,
+	'valid': false,
+	'position': Vector2(0, 0)
+}
 
 # Called when the node enters the scene tree for the first time.
 func _ready() -> void:
-	create("/home/key/tmp/chara.vrm")
+	get_window().focus_entered.connect(_on_window_focus_in)
+	get_window().focus_exited.connect(_on_window_focus_out)
+
+func _on_window_focus_in():
+	get_parent().focus_child(side)
+	if not mouse_passthrough_polygon.is_empty():
+		return
+	get_parent().raise_unless_top()
+
+func _on_window_focus_out():
 	pass
 
 # Called every frame. 'delta' is the elapsed time since the previous frame.
@@ -37,27 +65,74 @@ func _process(_delta: float) -> void:
 				'args': [side]
 			},
 			]
-		get_parent().enqueue_sstp(req)
+		if not get_tree().edited_scene_root:
+			get_parent().enqueue_sstp(req)
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseMotion:
+		if _drag['pressed'] and _chara:
+			_drag['valid'] = true
+			var diff = camera.project_ray_origin(event.position) - camera.project_ray_origin(_drag['position'])
+			_drag['position'] = event.position
+			_chara.position.x += diff.x
+			_chara.position.y += diff.y
+		update_mouse_passthrough(event.position)
+	if event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			_drag['pressed'] = event.pressed
+			if _drag['pressed']:
+				_drag['position'] = event.position
+			else:
+				_drag['pressed'] = false
+				_drag['valid'] = false
+
+func update_mouse_passthrough(pos):
+	var from = camera.project_ray_origin(pos)
+	var to = from + camera.project_ray_normal(pos) * RAY_LENGTH
+	var query = PhysicsRayQueryParameters3D.create(from, to)
+	query.collide_with_areas = true
+	var result = camera.get_world_3d().direct_space_state.intersect_ray(query)
+	if result.is_empty():
+		var polygon = [
+			Vector2(0, 0),
+			Vector2(1, 0),
+			Vector2(1, 1),
+			Vector2(0, 1)
+			]
+		mouse_passthrough_polygon = polygon
+		get_parent().raise_unless_top()
+		return
+	mouse_passthrough_polygon = []
 
 func create(path: String) -> void:
-	var node = load_vrm_runtime(path)
+	var node = load_vrm(path)
 	if node:
-		_print_node(node)
-		var skeleton: Skeleton3D = node.find_child('GeneralSkeleton', true, false)
+		_chara = node
+		add_child(_chara)
+		_print_node(_chara)
+		var skeleton: Skeleton3D = _chara.find_child('GeneralSkeleton', true, false)
 		if skeleton:
-			skeleton.clear_bones_global_pose_override()
-			skeleton.force_update_all_bone_transforms()
 			skeleton.reset_bone_poses()	
+			for child in skeleton.get_children():
+				if child is MeshInstance3D:
+					var area = Area3D.new()
+					area.name = child.name + '_area'
+					var shape = CollisionShape3D.new()
+					shape.name = child.name + '_shape'
+					shape.shape = child.mesh.create_trimesh_shape()
+					skeleton.add_child(area)
+					area.owner = self
+					area.add_child(shape)
+					shape.owner = self
+					area.global_transform = child.global_transform
+
 		var player: AnimationPlayer = node.get_node('AnimationPlayer')
 		if player:
 			pass
 			#player.play('happy')
-		_chara = node
-		add_child(_chara)
 
 func _get_rect() -> Rect2:
 	var rect = Rect2(Vector2.ZERO, Vector2.ZERO)
-
 	for child in _chara.find_child('GeneralSkeleton', true, false).get_children():
 		if child is MeshInstance3D:
 			var aabb: AABB = child.get_aabb()
@@ -75,23 +150,38 @@ func _get_rect() -> Rect2:
 
 func _print_node(node: Node, indent: String = "") -> void:
 	for child in node.get_children():
-		#print(indent + child.name)
+		printerr(indent + child.name)
 		if child.get_child_count() > 0:
 			_print_node(child, indent + "  ")
 
-func load_vrm_runtime(path: String) -> Node:
+func load_vrm(path: String) -> Node:
 	if not FileAccess.file_exists(path):
 		return
-	var conv = GLTFDocumentExtensionConvertImporterMesh.new()
-	GLTFDocument.register_gltf_document_extension(conv, true)
-	var vrm_extension: GLTFDocumentExtension = vrm.new()
-	GLTFDocument.register_gltf_document_extension(vrm_extension, true)
+	GLTFDocument.register_gltf_document_extension(VRMC_vrm_inst)
+	GLTFDocument.register_gltf_document_extension(VRMC_node_constraint_inst)
+	GLTFDocument.register_gltf_document_extension(VRMC_springBone_inst)
+	GLTFDocument.register_gltf_document_extension(VRMC_materials_hdr_emissiveMultiplier_inst)
+	GLTFDocument.register_gltf_document_extension(VRMC_materials_mtoon_inst)
+	GLTFDocument.register_gltf_document_extension(VRMC_vrm_animation_inst)
+	GLTFDocument.register_gltf_document_extension(vrm_inst, true)
 	var gltf: GLTFDocument = GLTFDocument.new()
 	var state: GLTFState = GLTFState.new()
 	var err = gltf.append_from_file(path, state)
 	if err != OK:
-		GLTFDocument.unregister_gltf_document_extension(vrm_extension)
+		GLTFDocument.unregister_gltf_document_extension(VRMC_vrm_inst)
+		GLTFDocument.unregister_gltf_document_extension(VRMC_node_constraint_inst)
+		GLTFDocument.unregister_gltf_document_extension(VRMC_springBone_inst)
+		GLTFDocument.unregister_gltf_document_extension(VRMC_materials_hdr_emissiveMultiplier_inst)
+		GLTFDocument.unregister_gltf_document_extension(VRMC_materials_mtoon_inst)
+		GLTFDocument.unregister_gltf_document_extension(VRMC_vrm_animation_inst)
+		GLTFDocument.unregister_gltf_document_extension(vrm_inst)
 		return null
 	var node: Node = gltf.generate_scene(state)
-	GLTFDocument.unregister_gltf_document_extension(vrm_extension)
+	GLTFDocument.unregister_gltf_document_extension(VRMC_vrm_inst)
+	GLTFDocument.unregister_gltf_document_extension(VRMC_node_constraint_inst)
+	GLTFDocument.unregister_gltf_document_extension(VRMC_springBone_inst)
+	GLTFDocument.unregister_gltf_document_extension(VRMC_materials_hdr_emissiveMultiplier_inst)
+	GLTFDocument.unregister_gltf_document_extension(VRMC_materials_mtoon_inst)
+	GLTFDocument.unregister_gltf_document_extension(VRMC_vrm_animation_inst)
+	GLTFDocument.unregister_gltf_document_extension(vrm_inst)
 	return node

@@ -9,6 +9,7 @@ var _mutex: Mutex
 var _sem: Semaphore
 var _th_recv: Thread
 var _th_send: Thread
+var _focus_list: Array = [-1]
 
 var _path: String
 var _endpoint: String
@@ -28,8 +29,18 @@ func _ready() -> void:
 	_th_recv = Thread.new()
 	_th_send = Thread.new()
 
+	get_window().focus_entered.connect(_on_window_focus_in)
+	get_window().focus_exited.connect(_on_window_focus_out)
+
 	_th_recv.start(_thread_recv)
 	_th_send.start(_thread_send)
+
+func _on_window_focus_in():
+	_focus_list.erase(-1)
+	_focus_list.append(-1)
+
+func _on_window_focus_out():
+	pass
 
 func _thread_recv() -> void:
 	var stdout = GDPrintBinary.new()
@@ -41,13 +52,13 @@ func _thread_recv() -> void:
 		var data = OS.read_buffer_from_stdin(int(length.decode_u32(0)))
 		if data.is_empty():
 			break
+		var req = _parse_request(data.get_string_from_utf8())
 		var res: PackedByteArray = "SORAKADO/0.1 204 No Content\r\n\r\n".to_ascii_buffer()
 		var bytes = PackedByteArray()
 		bytes.resize(4)
 		bytes.encode_u32(0, res.size())
+		bytes.append_array(res)
 		stdout.print_raw(bytes, bytes.size())
-		stdout.print_raw(res, res.size())
-		var req = _parse_request(data.get_string_from_utf8())
 		_mutex.lock()
 		_sorakado_queue.append(req)
 		_mutex.unlock()
@@ -173,10 +184,10 @@ func _process(_delta: float) -> void:
 				if !found:
 					var window: Window = SUB_SCENE.instantiate()
 					window.side = side
-					window.create(_path + _config['model'])
 					add_child(window)
+					window.create(_path + _config['model'])
 
-func _input(event: InputEvent) -> void:
+func _unhandled_input(event: InputEvent) -> void:
 	#printerr(event.as_text(), get_viewport().get_screen_transform())
 	if event is InputEventMouseMotion:
 		var pos = get_viewport().get_screen_transform() * event.position
@@ -199,6 +210,18 @@ func _input(event: InputEvent) -> void:
 			]
 		#print(_region)
 		get_window().mouse_passthrough_polygon = _region
+		for child in get_children():
+			if child is Window:
+				child.update_mouse_passthrough(pos)
+
+func raise_unless_top() -> void:
+	if _focus_list.back() == -1:
+		return
+	get_window().grab_focus()
+
+func focus_child(side: int) -> void:
+	_focus_list.erase(side)
+	_focus_list.append(side)
 
 func _exit_tree() -> void:
 	_th_recv.wait_to_finish()
