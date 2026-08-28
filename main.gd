@@ -1,6 +1,6 @@
 extends Node
 
-const SUB_SCENE = preload('res://sub.tscn')
+const SUB_SCENE = preload('res://sub_gltf.tscn')
 
 var _alive: bool = true
 var _sorakado_queue: Array
@@ -16,7 +16,13 @@ var _endpoint: String
 var _uuid: String
 var _config: Dictionary
 
+var _mouse_position: Vector2
 var _region: PackedVector2Array
+
+var _windows: Dictionary
+
+var _menu_rect: Rect2i = Rect2i(0, 0, 0, 0)
+var _menu = preload("res://popup_menu.gd").new()
 
 var _request_header: RegEx = RegEx.create_from_string(r'^(\w+) ([A-Z]+)/(\d+\.\d+)$')
 var _reference_header: RegEx = RegEx.create_from_string(r'^(?:Reference|Argument)(0|[1-9]\d*)$')
@@ -28,12 +34,30 @@ func _ready() -> void:
 	_sem = Semaphore.new()
 	_th_recv = Thread.new()
 	_th_send = Thread.new()
-
+	
 	get_window().focus_entered.connect(_on_window_focus_in)
 	get_window().focus_exited.connect(_on_window_focus_out)
 
 	_th_recv.start(_thread_recv)
 	_th_send.start(_thread_send)
+
+	if OS.get_name() != 'Linux' && !OS.get_name().ends_with('BSD'):
+		_passthrough()
+
+	add_child(_menu)
+
+func _passthrough():
+	if OS.get_name() == 'Windows':
+		pass
+	else:
+		_region = [
+			Vector2(0, 0),
+			Vector2(1, 0),
+			Vector2(1, 1),
+			Vector2(0, 1),
+		]
+		get_window().mouse_passthrough_polygon = _region
+
 
 func _on_window_focus_in():
 	_focus_list.erase(-1)
@@ -163,33 +187,62 @@ func _process(_delta: float) -> void:
 		if !data.is_empty():
 			var command: String = data['header']['Command']
 			var args: Dictionary = data['args']
-			if command == 'Initialize':
-				_mutex.lock()
-				_path = args[0]
-				_mutex.unlock()
-				_read_config()
-			if command == 'Endpoint':
-				_mutex.lock()
-				_endpoint = args[0]
-				_uuid = args[1]
-				_mutex.unlock()
-				_sem.post()
-			if command == 'Create':
-				var side: int = int(args[0])
-				var found = false
-				for x in get_children():
-					if x is Window and x.side == side:
-						found = true
-						break
-				if !found:
+			match command:
+				'Initialize':
+					_mutex.lock()
+					_path = args[0]
+					_mutex.unlock()
+					_read_config()
+				'Endpoint':
+					_mutex.lock()
+					_endpoint = args[0]
+					_uuid = args[1]
+					_mutex.unlock()
+					_sem.post()
+				'Create':
+					var path: String = _config['model'][args[0]]['path']
+					if path.contains('..'):
+						continue
+					var side: int = int(args[0])
+					if _windows.has(side):
+						continue
 					var window: Window = SUB_SCENE.instantiate()
+					window.hide()
 					window.side = side
+					window.own_world_3d = true
 					add_child(window)
-					window.create(_path + _config['model'])
+					window.create(_path + path)
+					window.set_config(_config['model'][args[0]]['bone'], _config['pose'][args[0]])
+					_windows[side] = window
+				'SetSurfaceID':
+					var side: int = int(args[0])
+					if !_windows.has(side):
+						continue
+					_windows[side].setID(args[1])
+				'Show':
+					var side: int = int(args[0])
+					if !_windows.has(side):
+						continue
+					_windows[side].show()
+				'Hide':
+					var side: int = int(args[0])
+					if !_windows.has(side):
+						continue
+					_windows[side].hide()
+				'NotifyMenuInfo':
+					var json = JSON.new()
+					var err = json.parse(args[0])
+					if err != Error.OK:
+						printerr('JSON Error: ', err, args[0])
+						continue
+					_menu.initialize(json.data)
+					_menu.popup(_menu_rect)
 
 func _unhandled_input(event: InputEvent) -> void:
 	#printerr(event.as_text(), get_viewport().get_screen_transform())
 	if event is InputEventMouseMotion:
+		if OS.get_name() != 'Linux' && !OS.get_name().ends_with('BSD'):
+			return
 		var pos = get_viewport().get_screen_transform() * event.position
 		var rect = get_viewport().get_screen_transform() * get_viewport().get_visible_rect()
 		const size = 5
@@ -210,11 +263,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			]
 		#print(_region)
 		get_window().mouse_passthrough_polygon = _region
+		_mouse_position = pos
 		for child in get_children():
-			if child is Window:
-				child.update_mouse_passthrough(pos)
+			if child.has_method('update_mouse_passthrough'):
+				child.update_mouse_passthrough(_mouse_position)
 
 func raise_unless_top() -> void:
+	if OS.get_name() != 'Linux' && !OS.get_name().ends_with('BSD'):
+		return
 	if _focus_list.back() == -1:
 		return
 	get_window().grab_focus()
@@ -254,7 +310,7 @@ func _parse_request(data: String) -> Dictionary:
 			continue
 		if state == 1:
 			content += line + "\n"
-		var list = line.split(':')
+		var list = line.split(':', true, 1)
 		if list.size() <= 1:
 			continue
 		var key: String = list[0]
@@ -301,7 +357,7 @@ func _parse_response(data: String) -> Dictionary:
 		if state == 1:
 			content += line + "\n"
 			continue
-		var list = line.split(':')
+		var list = line.split(':', true, 1)
 		if list.size() <= 1:
 			continue
 		var key: String = list[0]
@@ -324,3 +380,22 @@ func enqueue_sstp(data):
 	_sstp_queue.append(data)
 	_mutex.unlock()
 	_sem.post()
+
+func get_leftmost(side):
+	var rect = get_viewport().get_screen_transform() * get_viewport().get_visible_rect()
+	var x = rect.size.x
+	for key in _windows:
+		if key == side or !_windows[key].adjusted():
+			continue
+		var r: Rect2 = _windows[key].get_rect()
+		if x > r.position.x:
+			x = r.position.x
+	return x
+
+func get_head_position(side):
+	if !_windows.has(side):
+		return null
+	return _windows[side].get_head_position()
+
+func reserve_menu_info(pos: Vector2) -> void:
+	_menu_rect = Rect2i(pos.x, pos.y, 0, 0)

@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://d1dvn7skcwvry"]
+
+[ext_resource type="Script" uid="uid://cx1um3a65ukln" path="res://popup_menu.gd" id="1_sdihw"]
+
+[node name="PopupMenu" type="PopupMenu" unique_id=249825078]
+oversampling_override = 1.0
+visible = true
+script = ExtResource("1_sdihw")

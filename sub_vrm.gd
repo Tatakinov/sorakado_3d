@@ -16,6 +16,7 @@ var VRMC_vrm_inst := VRMC_vrm.new()
 const VRMC_vrm_animation = preload('res://addons/vrm/1.0/VRMC_vrm_animation.gd')
 var VRMC_vrm_animation_inst := VRMC_vrm_animation.new()
 
+@onready var pivot: Marker3D = $Sub/Camera
 @onready var camera: Camera3D = $Sub/Camera/Camera3D
 
 var _chara: Node3D
@@ -67,6 +68,7 @@ func _process(_delta: float) -> void:
 			]
 		if not get_tree().edited_scene_root:
 			get_parent().enqueue_sstp(req)
+	pivot.rotate_y(_delta)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
@@ -112,7 +114,7 @@ func create(path: String) -> void:
 		_print_node(_chara)
 		var skeleton: Skeleton3D = _chara.find_child('GeneralSkeleton', true, false)
 		if skeleton:
-			skeleton.reset_bone_poses()	
+			skeleton.reset_bone_poses()
 			for child in skeleton.get_children():
 				if child is MeshInstance3D:
 					var area = Area3D.new()
@@ -126,10 +128,18 @@ func create(path: String) -> void:
 					shape.owner = self
 					area.global_transform = child.global_transform
 
-		var player: AnimationPlayer = node.get_node('AnimationPlayer')
-		if player:
-			pass
-			#player.play('happy')
+		#var test = load_vrm("/home/key/tmp/unyu2/unyu.glb")
+		var test = false
+		if test:
+			var p: AnimationPlayer = test.get_node('AnimationPlayer')
+			var lib = p.get_animation_library("")
+			var player: AnimationPlayer = node.get_node('AnimationPlayer')
+			if player:
+				#player.play('RESET')
+				#player.advance(0)
+				player.add_animation_library("test", lib)
+				player.play('test/A-Pose')
+				pass
 
 func _get_rect() -> Rect2:
 	var rect = Rect2(Vector2.ZERO, Vector2.ZERO)
