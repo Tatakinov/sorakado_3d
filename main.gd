@@ -48,7 +48,8 @@ func _ready() -> void:
 
 func _passthrough():
 	if OS.get_name() == 'Windows':
-		pass
+		if Engine.has_singleton('MousePassthrough'):
+			Engine.get_singleton('MousePassthrough').set_passthrough(get_window().get_window_id(), true)
 	else:
 		_region = [
 			Vector2(0, 0),
@@ -156,7 +157,7 @@ func _thread_send():
 				if not tmp:
 					continue
 				res = _parse_response(tmp)
-				if res.is_empty() or (res['proto']['code'] == 200 and res['content'].is_empty()):
+				if res.is_empty() or (res['proto']['code'] == 200 and !res['header'].has('Script') and res['content'].is_empty()):
 					continue
 				break
 			if res['proto']['code'] == 204:

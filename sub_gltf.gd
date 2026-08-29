@@ -191,7 +191,8 @@ func update_mouse_passthrough(pos):
 			return
 		_click_through = true
 		if OS.get_name() == 'Windows':
-			pass
+			if Engine.has_singleton('MousePassthrough'):
+				Engine.get_singleton('MousePassthrough').set_passthrough(get_window().get_window_id(), true)
 		else:
 			var polygon = [
 				Vector2(0, 0),
@@ -206,7 +207,8 @@ func update_mouse_passthrough(pos):
 			return
 		_click_through = false
 		if OS.get_name() == 'Windows':
-			pass
+			if Engine.has_singleton('MousePassthrough'):
+				Engine.get_singleton('MousePassthrough').set_passthrough(get_window().get_window_id(), false)
 		else:
 			mouse_passthrough_polygon = []
 
