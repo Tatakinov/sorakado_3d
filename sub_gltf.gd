@@ -144,18 +144,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			MOUSE_BUTTON_MIDDLE: '2',
 		}
 		if table.has(event.button_index):
-			if event.pressed:
-				var args: Array = [str(int(pos.x)), str(int(pos.y)), '0', side, '', table[event.button_index]]
-				var req: Array = [
-					{
-						'method': 'NOTIFY',
-						'event': 'OnMouseDown',
-						'args': args,
-					},
-					]
-				get_parent().enqueue_sstp(req)
-			elif event.double_click:
-				var args: Array = [str(int(pos.x)), str(int(pos.y)), '0', side, '', table[event.button_index]]
+			if event.double_click:
+				var args: Array = [str(int(pos.x)), str(int(pos.y)), '0', str(side), '', table[event.button_index]]
 				var req: Array = [
 					{
 						'method': 'NOTIFY',
@@ -164,8 +154,18 @@ func _unhandled_input(event: InputEvent) -> void:
 					},
 					]
 				get_parent().enqueue_sstp(req)
+			elif event.pressed:
+				var args: Array = [str(int(pos.x)), str(int(pos.y)), '0', str(side), '', table[event.button_index]]
+				var req: Array = [
+					{
+						'method': 'NOTIFY',
+						'event': 'OnMouseDown',
+						'args': args,
+					},
+					]
+				get_parent().enqueue_sstp(req)
 			else:
-				var args: Array = [str(int(pos.x)), str(int(pos.y)), '0', side, '', table[event.button_index]]
+				var args: Array = [str(int(pos.x)), str(int(pos.y)), '0', str(side), '', table[event.button_index]]
 				var req: Array = [
 					{
 						'method': 'NOTIFY',
@@ -179,6 +179,16 @@ func _unhandled_input(event: InputEvent) -> void:
 					},
 					]
 				get_parent().enqueue_sstp(req)
+	if event is InputEventKey and event.is_pressed():
+		var args: Array = [OS.get_keycode_string(event.keycode).to_lower(), '0', '0', str(side), '']
+		var req: Array = [
+			{
+				'method': 'NOTIFY',
+				'event': 'OnKeyPress',
+				'args': args,
+			},
+			]
+		get_parent().enqueue_sstp(req)
 
 func update_mouse_passthrough(pos):
 	var from = camera.project_ray_origin(pos)
@@ -213,7 +223,7 @@ func update_mouse_passthrough(pos):
 			mouse_passthrough_polygon = []
 
 func create(path: String) -> void:
-	var node = load_vrm(path)
+	var node = load_gltf(path)
 	if node:
 		_chara = node
 		add_child(_chara)
@@ -272,7 +282,7 @@ func _print_node(node: Node, indent: String = "") -> void:
 		if child.get_child_count() > 0:
 			_print_node(child, indent + "  ")
 
-func load_vrm(path: String) -> Node:
+func load_gltf(path: String) -> Node:
 	if not FileAccess.file_exists(path):
 		return
 	var gltf: GLTFDocument = GLTFDocument.new()
@@ -308,6 +318,7 @@ func setID(id):
 		match item['type']:
 			'animation':
 				_player.play(item['name'])
+				_player.advance(0)
 			'shape':
 				var a = item['name'].split('/', true, 1)
 				if a.size() != 2:
